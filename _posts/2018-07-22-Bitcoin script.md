@@ -99,7 +99,7 @@ locking scrit: OP_DUP OP_HASH160 a83fc0fb6edecb5289ef3e333520e4235bdf8a87(PUBKEY
 
 
 | Stack                                | Script                                                       | Description                                                  |
-| ------------------------------------ | :------------------------------------------------------------: | ------------------------------------------------------------: |
+| :------------------------------------: | :------------------------------------------------------------: | :------------------------------------------------------------: |
 | `SIG`                                | ` PUBKEY OP_DUP OP_HASH160 PUBKEY_HASH OP_EQUALVERIFY OP_CHECKSIG` | `SIG`를 stack에 푸쉬한다. (OPCode)가 아니면 모두 stack push한다. |
 | `SIG PUBKEY`                         | `OP_DUP OP_HASH160 PUBKEY_HASH OP_EQUALVERIFY OP_CHECKSIG`   | `PUBKEY` 를 stack에 푸쉬한다.                                |
 | `SIG PUBKEY PUBKEY`                  | `OP_HASH160 PUBKEY_HASH OP_EQUALVERIFY OP_CHECKSIG`          | `OP_DUP` 는 stack에서 pop한후에 복사해서 둘다 push한다.      |
