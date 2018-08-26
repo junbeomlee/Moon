@@ -50,6 +50,18 @@ Serialize() ([]byte, error)
 
 함수를 직접 구현해서 Block을 어떻게 []byte로 변환할지를 직접 구현하면 된다.
 
+```go
+package sdk
+
+import "github.com/it-chain/sdk/pb"
+
+type RequestHandler interface {
+	Name() string
+	Versions() []string
+	Handle(request *pb.Request, cell *Cell) *pb.Response
+}
+```
+
 
 
 ## Transaction Interface
@@ -105,6 +117,71 @@ func (block DefaultBlock) IsPrev(serializedBlock []byte) bool {
 ```
 
 Yggdrasill에서 정의한 interface를 만족하는 모든 Block을 저장할 수 있지만, Default Block구조체를 제공하고 있다. 위의 그림은 기본으로 제공되는 Block구조체와 함수의 모습이며, 예시로 설명하기 위해 IsPrev함수만 남겨 두었다. IsPrev함수는 Blockchain의 LastBlock을 받아서 이 Block이 LastBlock인지 검사하는 함수이다. 이 함수는 꼭 Block을 정의한 쪽에서 구현을 해주어야 하는데, Yggdrasill은 Block의 구조를 모르기 때문에 DB에서 마지막 Block을 가져오더라도 []byte로만 가져올 수 있기 때문에 height나 hash같은 값들을 가져올 수 없기 때문에 Block을 정의하는 사용자 입장에서 Block을 Deserialize해서 검사해주는 로직을 정의해 주어야 한다.
+
+```go
+// AddBlock 함수는 새로운 Block을 Yggdrasill의 DB에 저장한다. 저장하기 전에 validator로 Block을 검증한다.
+func (y *BlockStorage) AddBlock(block common.Block) error {
+	serializedBlock, err := block.Serialize()
+	if err != nil {
+		return err
+	}
+
+	err = y.validateBlock(block)
+	if err != nil {
+		return err
+	}
+
+	utilDB := y.DBProvider.GetDBHandle(utilDB)
+	blockSealDB := y.DBProvider.GetDBHandle(blockSealDB)
+	blockHeightDB := y.DBProvider.GetDBHandle(blockHeightDB)
+	transactionDB := y.DBProvider.GetDBHandle(transactionDB)
+	err = blockSealDB.Put(block.GetSeal(), serializedBlock, true)
+	if err != nil {
+		return err
+	}
+
+	err = blockHeightDB.Put([]byte(fmt.Sprint(block.GetHeight())), block.GetSeal(), true)
+	if err != nil {
+		return err
+	}
+
+	err = utilDB.Put([]byte(lastBlockKey), serializedBlock, true)
+	if err != nil {
+		return err
+	}
+
+	for _, tx := range block.GetTxList() {
+		serializedTX, err := tx.Serialize()
+		if err != nil {
+			return err
+		}
+		err = transactionDB.Put([]byte(tx.GetID()), serializedTX, true)
+		if err != nil {
+			return err
+		}
+		err = utilDB.Put([]byte(tx.GetID()), block.GetSeal(), true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+
+
+```GO
+type BlockStorageManager interface {
+	Close()
+	GetValidator() common.Validator
+	AddBlock(block common.Block) error
+	GetBlockByHeight(block common.Block, height uint64) error
+	GetBlockBySeal(block common.Block, seal []byte) error
+	GetBlockByTxID(block common.Block, txid string) error
+	GetLastBlock(block common.Block) error
+	GetTransactionByTxID(transaction common.Transaction, txid string) error
+}
+```
 
 
 
@@ -181,3 +258,60 @@ func (y *Yggdrasil) AddBlock(block block.Block) error {
 이번 포스팅에서는 it-chain-Engine에서 사용하는 Blockchain 라이브러리에 대해서 알아보았다. 내용을 요약하자면, Yggdrasill은 Block, Transaction의 interface를 통해 누구나 자신만의 Block, Transaction을 Blockchain형태로 저장하고 검증할 수 있다. 
 
 Github주소: https://github.com/it-chain/yggdrasill
+
+
+
+
+
+```go
+type HandlerExample struct {
+}
+
+func (*HandlerExample) Name() string {
+	return "sample"
+}
+
+func (*HandlerExample) Versions() []string {
+	vers := make([]string, 0)
+	vers = append(vers, "1.0")
+	vers = append(vers, "1.2")
+	return vers
+}
+
+func (*HandlerExample) Handle(request *pb.Request, cell *sdk.Cell) *pb.Response {
+	switch request.Type {
+	case "invoke":
+		return handleInvoke(request, cell)
+	case "query":
+		return handleQuery(request, cell)
+	default:
+		logger.Debug(nil, "unknown request type")
+		err := errors.New("unknown request type")
+		return responseError(request, err)
+	}
+}
+
+func handleInvoke(request *pb.Request, cell *sdk.Cell) *pb.Response {
+	switch request.FunctionName {
+	case "initA":
+		err := cell.PutData("A", []byte("0"))
+		if err != nil {
+			return responseError(request, err)
+		}
+		return responseSuccess(request, nil)
+	default:
+		err := errors.New("unknown invoke method")
+		return responseError(request, err)
+	}
+}
+```
+
+```protobuf
+message Request {
+    string uuid = 1;
+    string Type = 2;
+    string FunctionName = 3;
+    repeated string Args = 4;
+}
+```
+
